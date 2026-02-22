@@ -1,0 +1,240 @@
+---
+title: "DATA 607 Project 1"
+author: "Zineb Tamnat"
+format: html
+editor: visual
+---
+
+**Selecting Test Cases for Opponents' Average Rating**
+
+Before writing any code, I am identifying test cases to manually. as required in the assignment.\
+\
+**Test Case 1: Player Who Played All Games\
+**\
+Player: PATRICK H SCHILLING (Pair Number 4)\
+\
+Round Results:\
+W 23, D 28, W 2, W 26, D 5, W 19, D 1\
+\
+Extracted Opponent Pair Numbers:\
+23, 28, 2, 26, 5, 19, 1\
+\
+This player has 7 valid opponents that played all rounds.\
+\
+**Test Case 2: Player Who Played Fewer Than All Games\
+**\
+Player: MIKE NIKITIN (Pair Number 16)\
+\
+Round Results:\
+D 10, W 15, H, W 39, L 2, W 36, U\
+\
+Extracted Opponent Pair Numbers (excluding H and U):\
+10, 15, 39, 2, 36\
+\
+This player has fewer than 7 opponents because:\
+H = Half-point bye \
+U = Unplayed round \
+
+## Finding Pre-Ratings of Opponents (Manual Verification)
+
+### Test Case 1: PATRICK H SCHILLING (Pair 4)
+
+Opponent Pair Numbers: 23, 28, 2, 26, 5, 19, 1
+
+Opponent pre-ratings: 1363, 1507, 1553, 1579, 1655, 1564, 1794
+
+Sum: 1363 + 1507 + 1553 + 1579 + 1655 + 1564 + 1794 = 11,015
+
+Number of Opponents = 7
+
+Average Opponent Pre-Rating: 11015 ÷ 7 = 1573.57
+
+Final Rounded Average Opponent Rating = 1574
+
+### Test Case 2: MIKE NIKITIN (Pair 16) 
+
+Round Results: D 10, W 15, H, W 39, L 2, W 36, U
+
+Opponent Pair Numbers: 10, 15, 39, 2, 36
+
+Opponent pre-ratings: 1365, 1220, 1436, 1553, 1355
+
+Number of Opponents Used in Average = 5
+
+Sum = 1365 + 1220 + 1436 + 1553 + 1355 = 6,929
+
+Average Opponent Pre-Rating: 6929 ÷ 5 = 1385.8
+
+Final Rounded Average Opponent Rating = 1386
+
+To ensure accuracy, I manually calculated the average opponent ratings for two test cases before writing any R code.
+
+-   Player who played all games (Pair 4): Average opponent rating = 1574\
+-   Player who played fewer than all games (Pair 16): Average opponent rating = 1386
+
+After implementing the R script, I will compare the computed results to these values.
+
+```{r}
+# Read the tournament text file as raw lines
+file_path <- "tournamentinfo.txt"   # put the file in the same folder as your .qmd
+lines <- readLines(file_path, warn = FALSE)
+
+# sanity check
+length(lines)
+head(lines, 15)
+```
+
+```{r}
+# Identify player name lines 
+player_line_idx <- grep("^\\s*[0-9]+\\s*\\|", lines)
+
+# How many players detected?
+length(player_line_idx)
+
+# View first few player lines
+lines[player_line_idx[1:5]]
+```
+
+```{r}
+# Grab the two-line records for each player
+player_lines <- lines[player_line_idx]
+detail_lines <- lines[player_line_idx + 1]
+
+# Chewck first 3 pairs of lines to confirm alignment
+cbind(player_lines[1:3], detail_lines[1:3])
+```
+
+```{r}
+# Parse State from the start of the detail line
+state <- trimws(sub("\\|.*$", "", detail_lines))
+state
+
+# Parse PreRating
+pre_rating <- as.integer(sub("^.*R:\\s*([0-9]+).*$", "\\1", detail_lines))
+pre_rating
+
+# Santy check: show first 5 players with state and pre_rating
+data.frame(
+  Pair = 1:5,
+  State = state[1:5],
+  PreRating = pre_rating[1:5]
+)
+```
+
+```{r}
+# Split the player line by "|" to grab key fields
+player_parts <- strsplit(player_lines, "\\|")
+
+# Helper to trim
+trim <- function(x) trimws(x)
+
+# Pair number is before first |
+pair_num <- as.integer(trim(sub("^\\s*([0-9]+)\\s*$", "\\1", sapply(player_parts, `[`, 1))))
+
+# Player name is the 2nd field
+player_name <- trim(sapply(player_parts, `[`, 2))
+
+# Total points is the 3rd field
+total_pts <- as.numeric(trim(sapply(player_parts, `[`, 3)))
+
+# The 7 round columns are fields 4 to 10
+round_fields <- t(sapply(player_parts, function(x) trim(x[4:10])))
+
+# Extract opponent numbers from each round field
+opp_nums <- apply(round_fields, 2, function(col) {
+  as.integer(sub("^.*?([0-9]+)\\s*$", "\\1", ifelse(grepl("[0-9]+", col), col, NA)))
+})
+
+# Sanity check: first 5 players
+head(data.frame(
+  Pair = pair_num,
+  Name = player_name,
+  TotalPts = total_pts,
+  R1 = opp_nums[,1],
+  R2 = opp_nums[,2],
+  R3 = opp_nums[,3],
+  R4 = opp_nums[,4],
+  R5 = opp_nums[,5],
+  R6 = opp_nums[,6],
+  R7 = opp_nums[,7]
+), 5)
+```
+
+```{r}
+# Calculate Average Opponent Pre-Rating
+
+# Combine opponent columns into a matrix
+opp_matrix <- cbind(
+  opp_nums[,1],
+  opp_nums[,2],
+  opp_nums[,3],
+  opp_nums[,4],
+  opp_nums[,5],
+  opp_nums[,6],
+  opp_nums[,7]
+)
+
+# Function to get average opponent pre-rating for one player
+calc_avg_opp_rating <- function(opponents, ratings) {
+  valid_opps <- opponents[!is.na(opponents)]   
+  if (length(valid_opps) == 0) return(NA)
+  
+  opp_ratings <- ratings[valid_opps]           
+  round(mean(opp_ratings))                    
+}
+
+# Apply to all players
+avg_opp_rating <- apply(opp_matrix, 1, calc_avg_opp_rating, ratings = pre_rating)
+
+# Create dataframe
+final_df <- data.frame(
+  Name = player_name,
+  State = state,
+  TotalPoints = total_pts,
+  PreRating = pre_rating,
+  AvgOpponentRating = avg_opp_rating
+)
+
+# Check first 10 rows
+head(final_df, 10)
+```
+
+```{r}
+# Export final dataset to CSV 
+
+write.csv(final_df,
+          file = "tournament_results.csv",
+          row.names = FALSE)
+
+# Check that the file was created
+file.exists("tournament_results.csv")
+```
+
+## Methodology
+
+The chess tournament text file was read as raw lines and parsed based on its two-line player record structure. Player name, total points, and opponent pair numbers were extracted from the first line, while state and pre-tournament rating were extracted from the second line using the string processing in R.
+
+Opponent pair numbers from each round were converted into opponent pre-ratings by indexing into the pre-rating vector. Non-game entries such as H, U, B, and X were treated as missing values and not counted in the calculation. The average pre-rating of opponents was then calculated for each player using only valid opponents and rounded to the nearest whole number.
+
+Two manual test cases (one player who played all games and one who played fewer games) were hand calculated and compared against the program output. Matching results confirmed that opponent extraction, rating parsing, and averaging logic was implemented correctly.
+
+```{r}
+# Load ggplot2 
+library(ggplot2)
+
+# Create a table of top 10 players with strongest opponents
+top_opponents <- final_df[order(-final_df$AvgOpponentRating), ][1:10, ]
+
+ggplot(top_opponents, aes(x = reorder(Name, AvgOpponentRating), 
+                          y = AvgOpponentRating)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(
+    title = "Top 10 Players by Average Opponent Pre-Rating",
+    x = "Player",
+    y = "Average Opponent Pre-Rating"
+  ) +
+  theme_classic()
+```
+
+For additional exploration, I created a bar chart showing the top 10 players by average opponent pre-rating. The graph illustrate how opponent difficulty varies across players and adds a visual perspective in addition to the CSV output.
